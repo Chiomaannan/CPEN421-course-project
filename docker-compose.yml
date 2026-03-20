@@ -1,0 +1,198 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Databases
+  auth-db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: auth_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5432:5432"
+    volumes:
+      - auth-db-data:/var/lib/postgresql/data
+    networks:
+      - emergency-network
+
+  resource-db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: resource_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5433:5432"
+    volumes:
+      - resource-db-data:/var/lib/postgresql/data
+    networks:
+      - emergency-network
+
+  incident-db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: incident_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5434:5432"
+    volumes:
+      - incident-db-data:/var/lib/postgresql/data
+    networks:
+      - emergency-network
+
+  dispatch-db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: dispatch_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5435:5432"
+    volumes:
+      - dispatch-db-data:/var/lib/postgresql/data
+    networks:
+      - emergency-network
+
+  analytics-db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: analytics_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5436:5432"
+    volumes:
+      - analytics-db-data:/var/lib/postgresql/data
+    networks:
+      - emergency-network
+
+  # RabbitMQ
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: admin
+      RABBITMQ_DEFAULT_PASS: password
+    networks:
+      - emergency-network
+
+  # Microservices
+  auth-service:
+    build: ./auth-service
+    ports:
+      - "3001:3001"
+    environment:
+      PORT: 3001
+      DB_HOST: auth-db
+      DB_PORT: 5432
+      DB_NAME: auth_db
+      DB_USER: postgres
+      DB_PASSWORD: password
+      JWT_SECRET: emergency_jwt_secret_key_2024
+      JWT_REFRESH_SECRET: emergency_refresh_secret_key_2024
+    depends_on:
+      - auth-db
+    networks:
+      - emergency-network
+    restart: unless-stopped
+
+  resource-service:
+    build: ./resource-service
+    ports:
+      - "3002:3002"
+    environment:
+      PORT: 3002
+      DB_HOST: resource-db
+      DB_PORT: 5432
+      DB_NAME: resource_db
+      DB_USER: postgres
+      DB_PASSWORD: password
+      JWT_SECRET: emergency_jwt_secret_key_2024
+      RABBITMQ_URL: amqp://admin:password@rabbitmq:5672
+    depends_on:
+      - resource-db
+      - rabbitmq
+    networks:
+      - emergency-network
+    restart: unless-stopped
+
+  incident-service:
+    build: ./incident-service
+    ports:
+      - "3003:3003"
+    environment:
+      PORT: 3003
+      DB_HOST: incident-db
+      DB_PORT: 5432
+      DB_NAME: incident_db
+      DB_USER: postgres
+      DB_PASSWORD: password
+      JWT_SECRET: emergency_jwt_secret_key_2024
+      RABBITMQ_URL: amqp://admin:password@rabbitmq:5672
+      RESOURCE_SERVICE_URL: http://resource-service:3002
+      AUTH_SERVICE_URL: http://auth-service:3001
+    depends_on:
+      - incident-db
+      - rabbitmq
+      - resource-service
+    networks:
+      - emergency-network
+    restart: unless-stopped
+
+  dispatch-service:
+    build: ./dispatch-service
+    ports:
+      - "3004:3004"
+    environment:
+      PORT: 3004
+      DB_HOST: dispatch-db
+      DB_PORT: 5432
+      DB_NAME: dispatch_db
+      DB_USER: postgres
+      DB_PASSWORD: password
+      JWT_SECRET: emergency_jwt_secret_key_2024
+      RABBITMQ_URL: amqp://admin:password@rabbitmq:5672
+      RESOURCE_SERVICE_URL: http://resource-service:3002
+    depends_on:
+      - dispatch-db
+      - rabbitmq
+    networks:
+      - emergency-network
+    restart: unless-stopped
+
+  analytics-service:
+    build: ./analytics-service
+    ports:
+      - "3005:3005"
+    environment:
+      PORT: 3005
+      DB_HOST: analytics-db
+      DB_PORT: 5432
+      DB_NAME: analytics_db
+      DB_USER: postgres
+      DB_PASSWORD: password
+      JWT_SECRET: emergency_jwt_secret_key_2024
+      RABBITMQ_URL: amqp://admin:password@rabbitmq:5672
+      INCIDENT_SERVICE_URL: http://incident-service:3003
+      DISPATCH_SERVICE_URL: http://dispatch-service:3004
+      RESOURCE_SERVICE_URL: http://resource-service:3002
+    depends_on:
+      - analytics-db
+      - rabbitmq
+    networks:
+      - emergency-network
+    restart: unless-stopped
+
+networks:
+  emergency-network:
+    driver: bridge
+
+volumes:
+  auth-db-data:
+  resource-db-data:
+  incident-db-data:
+  dispatch-db-data:
+  analytics-db-data:
