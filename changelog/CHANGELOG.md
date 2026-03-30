@@ -1,5 +1,171 @@
 # Changelog
 
+## [1.1.0] - 2026-03-30
+
+### Phase 3: Frontend Implementation
+
+---
+
+## Phase 3: Frontend
+
+A React single-page application providing the operator-facing command interface for the GERCS platform. Built with Vite, React 18, Tailwind CSS, and a dark tactical design language styled to the Ghana Emergency Response Command System identity.
+
+### Tech Stack
+
+| Tool | Purpose |
+|---|---|
+| React 18 + Vite | SPA framework and dev/build tooling |
+| React Router v6 | Client-side routing with protected routes |
+| Tailwind CSS v3 | Utility-first styling |
+| Axios | HTTP client with JWT interceptor |
+| Socket.io-client | WebSocket connection to dispatch-service |
+| Leaflet + React Leaflet | Interactive map rendering |
+| Recharts | Analytics charts |
+| Lucide React | Icon system |
+
+### Design System (`src/index.css`)
+
+A custom CSS design system layered on top of Tailwind:
+- **Colour palette** — deep navy backgrounds (`#02060f`, `#040b18`, `#071422`), Ghana national colours (red `#ce1126`, gold `#fcd116`, green `#006b3f`) used as accent and branding elements
+- **Typography** — DM Sans for body text, Rajdhani for display/label text (tactical aesthetic)
+- **Components** — `.glass-card`, `.cmd-input`, `.status-badge`, `.data-table`, `.pulse-dot`, `.live-badge`, `.ghana-stripe`, `.spinner` utility classes
+- **Leaflet dark theme** — overrides for popup, zoom controls, and attribution to match the dark UI
+- **Recharts theme** — grid line and tooltip colour overrides
+
+### Routing (`App.jsx`)
+
+```
+/               → redirect to /dispatch
+/login          → Login page (public)
+/dispatch       → DispatchStatus (protected)
+/incidents/new  → NewIncident (protected)
+/tracking       → VehicleTracking (protected)
+/analytics      → Analytics (protected)
+```
+
+All routes except `/login` are wrapped in `ProtectedRoute`, which redirects unauthenticated users to `/login`.
+
+---
+
+### Files Implemented
+
+#### `src/api/client.js`
+Axios factory used by all pages. Creates per-service clients with:
+- Automatic `Authorization: Bearer <token>` header injection from `localStorage`
+- Global 401 handler: clears token and redirects to `/login`
+
+Exports: `authApi`, `resourceApi`, `incidentApi`, `dispatchApi`, `analyticsApi`
+
+---
+
+#### `src/contexts/AuthContext.jsx`
+React context wrapping the entire app. Provides:
+- `login(email, password)` — POST to `/auth/login`, stores `accessToken` in localStorage
+- `register(name, email, password, role)` — POST to `/auth/register`, stores token
+- `logout()` — clears token and user state
+- `user`, `token`, `loading` state accessible via `useAuth()` hook
+- Auto-restores session on page load via `GET /auth/profile` using stored token
+
+---
+
+#### `src/components/ProtectedRoute.jsx`
+Route guard component — renders `<Outlet />` if authenticated, redirects to `/login` otherwise.
+
+---
+
+#### `src/components/Layout.jsx`
+Persistent shell rendered around all protected pages. Contains:
+- **Top bar** — GERCS logo/name, Ghana stripe accent, live clock with date, logged-in user name and role badge, logout button
+- **Sidebar navigation** — links to Dispatch Status, New Incident, Vehicle Tracking, Analytics with active-state highlighting and Lucide icons
+- **Connection status indicator** — shows backend reachability state
+- Auto-refreshes the clock every second
+
+---
+
+#### `src/pages/Login.jsx`
+Authentication page with two modes toggled by a tab switcher:
+
+**Sign In tab:**
+- Email + password fields
+- Submits to `POST /auth/login`
+
+**Register tab:**
+- Name, email, password fields
+- Role selector: `system_admin`, `hospital_admin`, `police_admin`, `fire_admin`, `ambulance_driver`
+- Submits to `POST /auth/register`
+
+Both modes store the returned `accessToken` and redirect to `/dispatch` on success. Inline error display for API failures.
+
+**Decorative elements:** dot-grid background, animated radar sweep rings, corner coordinate/classification labels, Ghana stripe top and bottom borders.
+
+---
+
+#### `src/pages/DispatchStatus.jsx`
+Live incident monitoring dashboard. Features:
+- Fetches all incidents from `GET /incidents` on mount and on manual refresh
+- Summary stat cards: total, active (created + dispatched + in_progress), resolved, and in-progress counts
+- Full incident table with columns: ID, type badge, citizen, location, assigned unit, status badge with pulse dot, time elapsed
+- Colour-coded status badges and incident type icons
+- Manual refresh button with loading state
+
+---
+
+#### `src/pages/NewIncident.jsx`
+Incident creation form. Features:
+- **Interactive Leaflet map** — click anywhere on the map to pin the incident location; coordinates auto-populate the lat/lon fields
+- Fields: citizen name, citizen phone, incident type (medical, fire, crime, accident, other), address/notes, latitude, longitude
+- Submits to `POST /incidents`
+- On success: shows a confirmation panel with the created incident ID, assigned unit type, and status; provides navigation to dispatch status
+- Map centred on Accra, Ghana (5.6037, -0.1870) by default
+
+---
+
+#### `src/pages/VehicleTracking.jsx`
+Real-time vehicle tracking map. Features:
+- Connects to dispatch-service WebSocket (`ws://localhost:3004`) with JWT auth on handshake
+- Fetches initial vehicle list from `GET /vehicles`
+- Listens for `location_update` WebSocket events and updates vehicle markers in real time
+- Leaflet map with custom SVG markers colour-coded by vehicle type (ambulance = blue, police = red, fire truck = orange)
+- Vehicle list sidebar showing status, last known coordinates, and connection indicator
+- WebSocket connection status badge (live/disconnected)
+
+---
+
+#### `src/pages/Analytics.jsx`
+Analytics dashboard with four data panels, all sourced from analytics-service:
+
+| Panel | Endpoint | Chart type |
+|---|---|---|
+| Summary KPIs | `GET /analytics/dashboard` | Stat cards |
+| Response Times by Type | `GET /analytics/response-times` | Bar chart |
+| Incidents by Region | `GET /analytics/incidents-by-region` | Bar chart |
+| Resource Utilization | `GET /analytics/resource-utilization` | Pie chart |
+
+Auto-refreshes every 30 seconds. Manual refresh button. Empty/loading states for all panels.
+
+---
+
+### Build Configuration
+
+**`vite.config.js`** — manual chunk splitting for optimal load performance:
+- `react-vendor` — react, react-dom, react-router-dom
+- `map` — leaflet, react-leaflet
+- `charts` — recharts
+- `io` — socket.io-client, axios
+
+Production build output: 6 chunks, largest 400KB (recharts), down from a single 863KB bundle.
+
+**`tailwind.config.js`** — scans `./src/**/*.{js,jsx}` for class purging.
+
+---
+
+### Docker & Infrastructure Fixes
+
+- Removed host port bindings from all 5 PostgreSQL containers in `docker-compose.yml` to avoid conflicts with local Postgres installations. Services communicate internally via container names on `emergency-network`.
+- Removed obsolete `version: '3.8'` top-level key from `docker-compose.yml`.
+
+---
+
 ## [1.0.0] - 2026-03-20
 
 ### Initial Implementation — Phase 1 (System Design) & Phase 2 (Backend)
@@ -300,6 +466,27 @@ emergency-response-platform/
 ├── README.md
 ├── changelog/
 │   └── CHANGELOG.md
+├── frontend/
+│   ├── index.html
+│   ├── package.json
+│   ├── vite.config.js
+│   ├── tailwind.config.js
+│   ├── postcss.config.js
+│   └── src/
+│       ├── main.jsx
+│       ├── App.jsx
+│       ├── index.css
+│       ├── api/client.js
+│       ├── contexts/AuthContext.jsx
+│       ├── components/
+│       │   ├── Layout.jsx
+│       │   └── ProtectedRoute.jsx
+│       └── pages/
+│           ├── Login.jsx
+│           ├── DispatchStatus.jsx
+│           ├── NewIncident.jsx
+│           ├── VehicleTracking.jsx
+│           └── Analytics.jsx
 ├── auth-service/
 │   ├── Dockerfile
 │   ├── package.json
